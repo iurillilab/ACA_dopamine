@@ -31,8 +31,9 @@ if isempty(fieldnames(S))
     S.GUI.CloseExhaustDuration = 0.10;
 
     % Optional sync
-    S.GUI.UseTrialStartSync = 0;
-    S.GUI.SyncBNCChannel = 2;
+    S.GUI.SyncTrialBNC = 1;
+    S.GUI.SyncRewardBNC = 2;
+    S.GUI.SyncAirpuffBNC = 3;
 
     S.GUIPanels.Timing = {'BaselineTime', 'PreOutcomeDelay'};
     S.GUIPanels.ITI = {'ITI_Mean', 'ITI_Min', 'ITI_Max'};
@@ -77,6 +78,10 @@ BpodSystem.Data.TrialSettings = [];
 
 %% Main trial loop
 REM.startUSBStream;
+
+trialMask   = bitset(0, S.GUI.SyncTrialBNC, 1);
+rewardMask  = bitset(0, S.GUI.SyncRewardBNC, 1);
+airpuffMask = bitset(0, S.GUI.SyncAirpuffBNC, 1);
 
 for currentTrial = 1:MaxTrials
     
@@ -131,17 +136,22 @@ for currentTrial = 1:MaxTrials
 
     sma = AddState(sma, 'Name', 'TrialStart', ...
         'Timer', 0.01, ...
+        'StateChangeConditions', {'Tup', 'TrialStartOff'}, ...
+        'OutputActions', {'BNCState', trialMask});
+
+    sma = AddState(sma, 'Name', 'TrialStartOff', ...
+        'Timer', 0.002, ...
         'StateChangeConditions', {'Tup', 'ResetEncoder'}, ...
-        'OutputActions', syncActions);
+        'OutputActions', {'BNCState', 0});
 
     sma = AddState(sma, 'Name', 'ResetEncoder', ...
         'Timer', 0, ...
-        'StateChangeConditions', {'Tup', 'Baseline'}, ...
-        'OutputActions', {'RotaryEncoder1', 'Z'});
+        'StateChangeConditions', {'Tup', 'ITI'}, ...
+        'OutputActions', {'RotaryEncoder1', 'Z', 'BNCState', 0});
 
     sma = AddState(sma, 'Name', 'ITI', ...
         'Timer', ITIDelay, ...
-        'StateChangeConditions', {'Tup', 'TrialStart'}, ...
+        'StateChangeConditions', {'Tup', 'DeliverOutcome'}, ...
         'OutputActions', {});
 
     % sma = AddState(sma, 'Name', 'Baseline', ...
