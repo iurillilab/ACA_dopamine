@@ -31,15 +31,13 @@ if isempty(fieldnames(S))
     S.GUI.CloseExhaustDuration = 0.10;
 
     % Optional sync
-    S.GUI.SyncTrialBNC = 1;
-    S.GUI.SyncRewardBNC = 2;
-    S.GUI.SyncAirpuffBNC = 3;
+    S.GUI.TrialSyncBNC = 1;
+    S.GUI.EventSyncBNC = 2;
 
-    S.GUIPanels.Timing = {'BaselineTime', 'PreOutcomeDelay'};
+    % S.GUIPanels.Timing = {'BaselineTime', 'PreOutcomeDelay'};
     S.GUIPanels.ITI = {'ITI_Mean', 'ITI_Min', 'ITI_Max'};
     S.GUIPanels.Reward = {'RewardValve', 'SmallRewardAmount_uL', 'LargeRewardAmount_uL', 'RewardCollectionWindow'};
     S.GUIPanels.Airpuff = {'AirpuffDuration', 'CloseExhaustDuration'};
-    S.GUIPanels.Sync = {'UseTrialStartSync', 'SyncBNCChannel'};
 end
 
 BpodParameterGUI('init', S);
@@ -64,8 +62,7 @@ BpodSystem.Data.RewardValveTimeUsed = [];
 
 BpodSystem.Data.RewardOnset = [];
 BpodSystem.Data.RewardOffset = [];
-BpodSystem.Data.RewardOffsetIfNoLick = [];
-BpodSystem.Data.NoLickDuringReward = [];
+BpodSystem.Data.RewardCollectionEnd = [];
 
 BpodSystem.Data.AirpuffOnset = [];
 BpodSystem.Data.AirpuffOffset = [];
@@ -79,9 +76,8 @@ BpodSystem.Data.TrialSettings = [];
 %% Main trial loop
 REM.startUSBStream;
 
-trialMask   = bitset(0, S.GUI.SyncTrialBNC, 1);
-rewardMask  = bitset(0, S.GUI.SyncRewardBNC, 1);
-airpuffMask = bitset(0, S.GUI.SyncAirpuffBNC, 1);
+trialMask = bitset(0, S.GUI.TrialSyncBNC, 1);
+eventMask = bitset(0, S.GUI.EventSyncBNC, 1);
 
 for currentTrial = 1:MaxTrials
     
@@ -119,18 +115,6 @@ for currentTrial = 1:MaxTrials
     BpodSystem.Data.RewardAmount_uL(currentTrial) = rewardAmount_uL;
     BpodSystem.Data.RewardValveTimeUsed(currentTrial) = rewardValveTime;
 
-    % ---------------- Airpuff actions ----------------
-    closeExhaustValveAction = {'ValveModule1', 1};
-    airPuffAction           = {'DIO1', [8 1], 'ValveModule1', 2, 'BNCState', airpuffMask};
-    endAirPuffAction        = {'DIO1', [8 0], 'ValveModule1', 1, 'BNCState', 0};
-
-    % ---------------- Optional sync actions ----------------
-    syncActions = {};
-    if S.GUI.UseTrialStartSync
-        syncMask = bitset(0, S.GUI.SyncBNCChannel, 1);
-        syncActions = {'BNCState', syncMask};
-    end
-
     % ---------------- Build state machine ----------------
     sma = NewStateMachine();
 
@@ -140,7 +124,7 @@ for currentTrial = 1:MaxTrials
         'OutputActions', {'BNCState', trialMask});
 
     sma = AddState(sma, 'Name', 'TrialStartOff', ...
-        'Timer', 0.002, ...
+        'Timer', 0.005, ...
         'StateChangeConditions', {'Tup', 'ResetEncoder'}, ...
         'OutputActions', {'BNCState', 0});
 
@@ -174,33 +158,33 @@ for currentTrial = 1:MaxTrials
             sma = AddState(sma, 'Name', 'Reward', ...
                 'Timer', rewardValveTime, ...
                 'StateChangeConditions', {'Tup', 'RewardOff'}, ...
-                'OutputActions', {'ValveState', S.GUI.RewardValve, 'BNCState', rewardMask});
+                'OutputActions', {'ValveState', S.GUI.RewardValve, 'BNCState', eventMask});
 
             sma = AddState(sma, 'Name', 'RewardOff', ...
                 'Timer', 0.002, ...
                 'StateChangeConditions', {'Tup', 'RewardCollection'}, ...
-                 'OutputActions', {'BNCState', 0});
+                'OutputActions', {'BNCState', 0});
 
             sma = AddState(sma, 'Name', 'RewardCollection', ...
                 'Timer', S.GUI.RewardCollectionWindow, ...
-                'StateChangeConditions', {'Tup', 'EndTrial'}, ...
+                'StateChangeConditions', {lickInEvent, 'EndTrial', 'Tup', 'EndTrial'}, ...
                 'OutputActions', {});
 
         case 2 % Airpuff
             sma = AddState(sma, 'Name', 'CloseExhaustValve', ...
                 'Timer', S.GUI.CloseExhaustDuration, ...
                 'StateChangeConditions', {'Tup', 'DeliverAirPuff'}, ...
-                'OutputActions', closeExhaustValveAction);
+                'OutputActions', {'ValveModule1', 1});
 
             sma = AddState(sma, 'Name', 'DeliverAirPuff', ...
                 'Timer', S.GUI.AirpuffDuration, ...
                 'StateChangeConditions', {'Tup', 'EndAirPuff'}, ...
-                'OutputActions', airPuffAction);
+                'OutputActions', {'DIO1', [8 1], 'ValveModule1', 2, 'BNCState', eventMask});
 
             sma = AddState(sma, 'Name', 'EndAirPuff', ...
                 'Timer', 0.01, ...
                 'StateChangeConditions', {'Tup', 'EndTrial'}, ...
-                'OutputActions', endAirPuffAction);
+                'OutputActions', {'DIO1', [8 0], 'ValveModule1', 1, 'BNCState', 0});
 
         case 3 % Empty
             sma = AddState(sma, 'Name', 'Empty', ...
@@ -234,21 +218,6 @@ for currentTrial = 1:MaxTrials
         % Read encoder data
         BpodSystem.Data.EncoderData{currentTrial} = REM.readUSBStream();
 
-        if isfield(BpodSystem.Data.EncoderData{currentTrial}, 'EventTimestamps') && ...
-                ~isempty(BpodSystem.Data.EncoderData{currentTrial}.EventTimestamps)
-
-            t0 = BpodSystem.Data.EncoderData{currentTrial}.EventTimestamps(1);
-
-            if isfield(BpodSystem.Data.EncoderData{currentTrial}, 'Times') && ...
-                    ~isempty(BpodSystem.Data.EncoderData{currentTrial}.Times)
-                BpodSystem.Data.EncoderData{currentTrial}.Times = ...
-                    BpodSystem.Data.EncoderData{currentTrial}.Times - t0;
-            end
-
-            BpodSystem.Data.EncoderData{currentTrial}.EventTimestamps = ...
-                BpodSystem.Data.EncoderData{currentTrial}.EventTimestamps - t0;
-        end
-
         % Extract trial events
         trialData = BpodSystem.Data.RawEvents.Trial{currentTrial};
 
@@ -270,21 +239,12 @@ for currentTrial = 1:MaxTrials
             BpodSystem.Data.RewardOffset(currentTrial) = NaN;
         end
 
+        % Reward collection end
         rewardCollectionState = GetStateWindowSafe(trialData, 'RewardCollection');
-        rewardWindow = [NaN NaN];
-        if ~any(isnan(rewardState)) && ~any(isnan(rewardCollectionState))
-            rewardWindow = [rewardState(1) rewardCollectionState(2)];
-        elseif ~any(isnan(rewardState))
-            rewardWindow = rewardState;
-        end
-
-        nLicksRewardWindow = CountEventsInWindow(lickTimes, rewardWindow);
-        if ~isnan(BpodSystem.Data.RewardOffset(currentTrial)) && nLicksRewardWindow == 0
-            BpodSystem.Data.NoLickDuringReward(currentTrial) = 1;
-            BpodSystem.Data.RewardOffsetIfNoLick(currentTrial) = BpodSystem.Data.RewardOffset(currentTrial);
+        if ~any(isnan(rewardCollectionState))
+            BpodSystem.Data.RewardCollectionEnd(currentTrial) = rewardCollectionState(2);
         else
-            BpodSystem.Data.NoLickDuringReward(currentTrial) = 0;
-            BpodSystem.Data.RewardOffsetIfNoLick(currentTrial) = NaN;
+            BpodSystem.Data.RewardCollectionEnd(currentTrial) = NaN;
         end
 
         % Airpuff times
@@ -348,7 +308,7 @@ switch trialType
     case 3
         nextState = 'Empty';
     otherwise
-        error('Trial type non valido');
+        error('Invalid trial type');
 end
 end
 
@@ -369,18 +329,6 @@ if any(isnan(st(1,:)))
     return
 end
 window = [st(1,1) st(end,2)];
-end
-
-%% =========================================================
-function n = CountEventsInWindow(eventTimes, window)
-n = 0;
-if isempty(eventTimes)
-    return
-end
-if numel(window) ~= 2 || any(isnan(window))
-    return
-end
-n = sum(eventTimes >= window(1) & eventTimes <= window(2));
 end
 
 %% =========================================================
