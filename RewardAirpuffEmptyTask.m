@@ -10,8 +10,6 @@ if isempty(fieldnames(S))
     S.GUI.MaxTrials = 300;
 
     % Timing
-    %S.GUI.BaselineTime = 1.0;
-    % S.GUI.PreOutcomeDelay = 1.0;
     S.GUI.ITI_Mean = 18;
     S.GUI.ITI_Min = 8;
     S.GUI.ITI_Max = 28;
@@ -20,7 +18,7 @@ if isempty(fieldnames(S))
     S.GUI.RewardValve = 1;
     S.GUI.SmallRewardAmount_uL = 4;
     S.GUI.LargeRewardAmount_uL = 16;
-    S.GUI.RewardValveTime = 0.05; % fallback if GetValveTimes is unavailable
+    S.GUI.RewardValveTime = 0.05;
     S.GUI.RewardCollectionWindow = 10000;
 
     % Licking
@@ -34,7 +32,6 @@ if isempty(fieldnames(S))
     S.GUI.TrialSyncBNC = 1;
     S.GUI.EventSyncBNC = 2;
 
-    % S.GUIPanels.Timing = {'BaselineTime', 'PreOutcomeDelay'};
     S.GUIPanels.ITI = {'ITI_Mean', 'ITI_Min', 'ITI_Max'};
     S.GUIPanels.Reward = {'RewardValve', 'SmallRewardAmount_uL', 'LargeRewardAmount_uL', 'RewardCollectionWindow'};
     S.GUIPanels.Airpuff = {'AirpuffDuration', 'CloseExhaustDuration'};
@@ -137,16 +134,6 @@ for currentTrial = 1:MaxTrials
         'Timer', ITIDelay, ...
         'StateChangeConditions', {'Tup', 'DeliverOutcome'}, ...
         'OutputActions', {});
-
-    % sma = AddState(sma, 'Name', 'Baseline', ...
-    %     'Timer', S.GUI.BaselineTime, ...
-    %     'StateChangeConditions', {'Tup', 'DeliverOutcome'}, ...
-    %     'OutputActions', {});
-
-    % sma = AddState(sma, 'Name', 'ObserveMovement', ...
-    %     'Timer', S.GUI.PreOutcomeDelay, ...
-    %     'StateChangeConditions', {'Tup', 'DeliverOutcome'}, ...
-    %     'OutputActions', {});
 
     sma = AddState(sma, 'Name', 'DeliverOutcome', ...
         'Timer', 0.001, ...
