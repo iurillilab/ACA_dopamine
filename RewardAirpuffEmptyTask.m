@@ -28,13 +28,15 @@ if isempty(fieldnames(S))
     S.GUI.AirpuffDuration = 2;
     S.GUI.CloseExhaustDuration = 0.10;
 
-    % Optional sync
-    S.GUI.TrialSyncBNC = 1;
-    S.GUI.EventSyncBNC = 2;
+    % Continuous sync for photometry
+    S.GUI.SyncBNC = 1;              % BNC output carrying 10 Hz sync pulses
+    S.GUI.SyncPulseWidth = 0.001;   % 1 ms TTL pulse
+    S.GUI.SyncFrequency = 10;       % Hz
 
     S.GUIPanels.ITI = {'ITI_Mean', 'ITI_Min', 'ITI_Max'};
     S.GUIPanels.Reward = {'RewardValve', 'SmallRewardAmount_uL', 'LargeRewardAmount_uL', 'RewardCollectionWindow'};
     S.GUIPanels.Airpuff = {'AirpuffDuration', 'CloseExhaustDuration'};
+    S.GUIPanels.Sync = {'SyncBNC', 'SyncPulseWidth', 'SyncFrequency'};
 end
 
 BpodParameterGUI('init', S);
@@ -70,11 +72,10 @@ BpodSystem.Data.LickTimes = {};
 BpodSystem.Data.EncoderData = {};
 BpodSystem.Data.TrialSettings = [];
 
+BpodSystem.Data.SyncPulseOn = {};
+BpodSystem.Data.SyncPulseOff = {};
 %% Main trial loop
 REM.startUSBStream;
-
-trialMask = bitset(0, S.GUI.TrialSyncBNC, 1);
-eventMask = bitset(0, S.GUI.EventSyncBNC, 1);
 
 for currentTrial = 1:MaxTrials
     
@@ -115,20 +116,33 @@ for currentTrial = 1:MaxTrials
     % ---------------- Build state machine ----------------
     sma = NewStateMachine();
 
+    % ---------------- Continuous 10 Hz sync global timer ----------------
+    % Sends periodic TTL pulses to photometry / external systems.
+    % GlobalTimer1_Start and GlobalTimer1_End are timestamped in RawEvents.
+    syncChannel = sprintf('BNC%d', S.GUI.SyncBNC); %'BNC1'
+    syncPeriod = 1 / S.GUI.SyncFrequency;
+    syncInterval = syncPeriod - S.GUI.SyncPulseWidth;
+
+    sma = SetGlobalTimer(sma, ...
+        'TimerID', 1, ...
+        'Duration', S.GUI.SyncPulseWidth, ...
+        'OnsetDelay', 0.0001, ...
+        'Channel', syncChannel, ...
+        'OnsetValue', 1, ...
+        'OffsetValue', 0, ...
+        'Loop', 1, ...
+        'GlobalTimerEvents', 1, ...
+        'LoopInterval', syncInterval);
+
     sma = AddState(sma, 'Name', 'TrialStart', ...
         'Timer', 0.01, ...
-        'StateChangeConditions', {'Tup', 'TrialStartOff'}, ...
-        'OutputActions', {'BNCState', trialMask});
-
-    sma = AddState(sma, 'Name', 'TrialStartOff', ...
-        'Timer', 0.005, ...
         'StateChangeConditions', {'Tup', 'ResetEncoder'}, ...
-        'OutputActions', {'BNCState', 0});
+        'OutputActions', {'GlobalTimerTrig', 1});
 
     sma = AddState(sma, 'Name', 'ResetEncoder', ...
         'Timer', 0, ...
         'StateChangeConditions', {'Tup', 'ITI'}, ...
-        'OutputActions', {'RotaryEncoder1', 'Z', 'BNCState', 0});
+        'OutputActions', {'RotaryEncoder1', 'Z'});
 
     sma = AddState(sma, 'Name', 'ITI', ...
         'Timer', ITIDelay, ...
@@ -145,12 +159,12 @@ for currentTrial = 1:MaxTrials
             sma = AddState(sma, 'Name', 'Reward', ...
                 'Timer', rewardValveTime, ...
                 'StateChangeConditions', {'Tup', 'RewardOff'}, ...
-                'OutputActions', {'ValveState', S.GUI.RewardValve, 'BNCState', eventMask});
+                'OutputActions', {'ValveState', S.GUI.RewardValve});
 
             sma = AddState(sma, 'Name', 'RewardOff', ...
                 'Timer', 0.002, ...
                 'StateChangeConditions', {'Tup', 'RewardCollection'}, ...
-                'OutputActions', {'BNCState', 0});
+                'OutputActions', {});
 
             sma = AddState(sma, 'Name', 'RewardCollection', ...
                 'Timer', S.GUI.RewardCollectionWindow, ...
@@ -166,12 +180,12 @@ for currentTrial = 1:MaxTrials
             sma = AddState(sma, 'Name', 'DeliverAirPuff', ...
                 'Timer', S.GUI.AirpuffDuration, ...
                 'StateChangeConditions', {'Tup', 'EndAirPuff'}, ...
-                'OutputActions', {'DIO1', [8 1], 'ValveModule1', 2, 'BNCState', eventMask});
+                'OutputActions', {'DIO1', [8 1], 'ValveModule1', 2});
 
             sma = AddState(sma, 'Name', 'EndAirPuff', ...
                 'Timer', 0.01, ...
                 'StateChangeConditions', {'Tup', 'EndTrial'}, ...
-                'OutputActions', {'DIO1', [8 0], 'ValveModule1', 1, 'BNCState', 0});
+                'OutputActions', {'DIO1', [8 0], 'ValveModule1', 1});
 
         case 3 % Empty
             sma = AddState(sma, 'Name', 'Empty', ...
@@ -207,6 +221,19 @@ for currentTrial = 1:MaxTrials
 
         % Extract trial events
         trialData = BpodSystem.Data.RawEvents.Trial{currentTrial};
+
+        % Sync pulse timestamps from global timer
+        if isfield(trialData.Events, 'GlobalTimer1_Start')
+            BpodSystem.Data.SyncPulseOn{currentTrial} = trialData.Events.GlobalTimer1_Start;
+        else
+            BpodSystem.Data.SyncPulseOn{currentTrial} = [];
+        end
+
+        if isfield(trialData.Events, 'GlobalTimer1_End')
+            BpodSystem.Data.SyncPulseOff{currentTrial} = trialData.Events.GlobalTimer1_End;
+        else
+            BpodSystem.Data.SyncPulseOff{currentTrial} = [];
+        end
 
         % Licks
         lickTimes = [];
