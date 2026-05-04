@@ -70,7 +70,7 @@ BpodSystem.Data.TotalLicks = [];
 BpodSystem.Data.LickTimes = {};
 
 BpodSystem.Data.EncoderData = {};
-BpodSystem.Data.TrialSettings = [];
+BpodSystem.Data.TrialSettings = {};
 
 BpodSystem.Data.SyncPulseOn = {};
 BpodSystem.Data.SyncPulseOff = {};
@@ -214,7 +214,7 @@ for currentTrial = 1:MaxTrials
 
     if ~isempty(fieldnames(RawEvents))
         BpodSystem.Data = AddTrialEvents(BpodSystem.Data, RawEvents);
-        BpodSystem.Data.TrialSettings(currentTrial) = S;
+        BpodSystem.Data.TrialSettings{currentTrial} = S;
 
         % Read encoder data
         BpodSystem.Data.EncoderData{currentTrial} = REM.readUSBStream();
