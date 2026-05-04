@@ -75,16 +75,22 @@ BpodSystem.Data.TrialSettings = {};
 BpodSystem.Data.SyncPulseOn = {};
 BpodSystem.Data.SyncPulseOff = {};
 %% Main trial loop
+TaskVis = InitTaskVisualization(MaxTrials, TrialTypes);
+
 REM.startUSBStream;
 
 for currentTrial = 1:MaxTrials
-    
+
     S = BpodParameterGUI('sync', S);
     trialType = TrialTypes(currentTrial);
+    trialLabel = TrialTypeToString(trialType);
+    fprintf('\nTrial %d/%d | Type: %s\n', currentTrial, MaxTrials, trialLabel);
+    UpdateTaskVisualizationStart(TaskVis, currentTrial, MaxTrials, trialType, trialLabel);
+    
     lickInEvent = sprintf('Port%dIn', S.GUI.LickPort);
 
     BpodSystem.Data.TrialTypes(currentTrial) = trialType;
-    BpodSystem.Data.TrialTypeLabel{currentTrial} = TrialTypeToString(trialType);
+    BpodSystem.Data.TrialTypeLabel{currentTrial} = trialLabel;
 
     ITIDelay = generateRandomDelay(S.GUI.ITI_Mean, S.GUI.ITI_Min, S.GUI.ITI_Max);
 
@@ -217,7 +223,10 @@ for currentTrial = 1:MaxTrials
         BpodSystem.Data.TrialSettings{currentTrial} = S;
 
         % Read encoder data
-        BpodSystem.Data.EncoderData{currentTrial} = REM.readUSBStream();
+        encoderDataThisTrial = REM.readUSBStream();
+        BpodSystem.Data.EncoderData{currentTrial} = encoderDataThisTrial;
+
+        UpdateTaskVisualizationEnd(TaskVis, currentTrial, encoderDataThisTrial);
 
         % Extract trial events
         trialData = BpodSystem.Data.RawEvents.Trial{currentTrial};
@@ -367,4 +376,217 @@ try
     V.openValve(1); % same convention as previous script
 catch
 end
+end
+
+%% =========================================================
+function TaskVis = InitTaskVisualization(MaxTrials, TrialTypes)
+
+TaskVis = struct();
+
+TaskVis.Fig = figure( ...
+    'Name', 'Bpod Task Monitor', ...
+    'NumberTitle', 'off', ...
+    'Color', 'w', ...
+    'MenuBar', 'none', ...
+    'ToolBar', 'figure');
+
+TaskVis.StatusText = uicontrol( ...
+    'Style', 'text', ...
+    'Units', 'normalized', ...
+    'Position', [0.05 0.90 0.90 0.07], ...
+    'String', 'Waiting to start...', ...
+    'FontSize', 16, ...
+    'FontWeight', 'bold', ...
+    'BackgroundColor', 'w', ...
+    'HorizontalAlignment', 'center');
+
+TaskVis.TrialText = uicontrol( ...
+    'Style', 'text', ...
+    'Units', 'normalized', ...
+    'Position', [0.05 0.84 0.90 0.05], ...
+    'String', '', ...
+    'FontSize', 12, ...
+    'BackgroundColor', 'w', ...
+    'HorizontalAlignment', 'center');
+
+TaskVis.AxTrialTypes = axes( ...
+    'Parent', TaskVis.Fig, ...
+    'Units', 'normalized', ...
+    'Position', [0.08 0.58 0.86 0.20]);
+
+hold(TaskVis.AxTrialTypes, 'on');
+
+plot(TaskVis.AxTrialTypes, 1:MaxTrials, TrialTypes, 'ko', ...
+    'MarkerFaceColor', [0.8 0.8 0.8], ...
+    'MarkerSize', 5);
+
+TaskVis.CurrentTrialMarker = plot(TaskVis.AxTrialTypes, NaN, NaN, 'ro', ...
+    'MarkerFaceColor', 'r', ...
+    'MarkerSize', 10);
+
+ylim(TaskVis.AxTrialTypes, [0.5 3.5]);
+xlim(TaskVis.AxTrialTypes, [1 MaxTrials]);
+yticks(TaskVis.AxTrialTypes, [1 2 3]);
+yticklabels(TaskVis.AxTrialTypes, {'Reward', 'Airpuff', 'Empty'});
+xlabel(TaskVis.AxTrialTypes, 'Trial');
+ylabel(TaskVis.AxTrialTypes, 'Trial type');
+title(TaskVis.AxTrialTypes, 'Trial sequence');
+
+TaskVis.AxRotary = axes( ...
+    'Parent', TaskVis.Fig, ...
+    'Units', 'normalized', ...
+    'Position', [0.08 0.13 0.86 0.33]);
+
+TaskVis.RotaryLine = plot(TaskVis.AxRotary, NaN, NaN, 'k-', 'LineWidth', 1.5);
+
+xlabel(TaskVis.AxRotary, 'Sample');
+ylabel(TaskVis.AxRotary, 'Rotary position');
+title(TaskVis.AxRotary, 'Rotary movement from last completed trial');
+grid(TaskVis.AxRotary, 'on');
+
+drawnow;
+
+end
+
+%% =========================================================
+function UpdateTaskVisualizationStart(TaskVis, currentTrial, MaxTrials, trialType, trialLabel)
+
+if ~isfield(TaskVis, 'Fig') || ~isvalid(TaskVis.Fig)
+    return
+end
+
+switch trialType
+    case 1
+        statusColor = [0.85 1.00 0.85]; % light green
+    case 2
+        statusColor = [1.00 0.85 0.85]; % light red
+    case 3
+        statusColor = [0.90 0.90 0.90]; % light gray
+    otherwise
+        statusColor = [1 1 1];
+end
+
+set(TaskVis.StatusText, ...
+    'String', sprintf('ONGOING TRIAL: %s', trialLabel), ...
+    'BackgroundColor', statusColor);
+
+set(TaskVis.TrialText, ...
+    'String', sprintf('Trial %d of %d', currentTrial, MaxTrials), ...
+    'BackgroundColor', 'w');
+
+set(TaskVis.CurrentTrialMarker, ...
+    'XData', currentTrial, ...
+    'YData', trialType);
+
+drawnow;
+
+end
+
+%% =========================================================
+function UpdateTaskVisualizationEnd(TaskVis, currentTrial, encoderData)
+
+if ~isfield(TaskVis, 'Fig') || ~isvalid(TaskVis.Fig)
+    return
+end
+
+rotaryPosition = ExtractRotaryPositionSafe(encoderData);
+
+if isempty(rotaryPosition)
+    set(TaskVis.RotaryLine, 'XData', NaN, 'YData', NaN);
+    title(TaskVis.AxRotary, sprintf('Rotary movement, trial %d: no data read', currentTrial));
+else
+    x = 1:numel(rotaryPosition);
+
+    set(TaskVis.RotaryLine, ...
+        'XData', x, ...
+        'YData', rotaryPosition);
+
+    xlim(TaskVis.AxRotary, [1 max(2, numel(rotaryPosition))]);
+
+    yMin = min(rotaryPosition);
+    yMax = max(rotaryPosition);
+
+    if yMin == yMax
+        ylim(TaskVis.AxRotary, [yMin - 1, yMax + 1]);
+    else
+        ylim(TaskVis.AxRotary, [yMin, yMax]);
+    end
+
+    title(TaskVis.AxRotary, sprintf('Rotary movement from trial %d', currentTrial));
+end
+
+set(TaskVis.StatusText, ...
+    'String', sprintf('Completed trial %d', currentTrial), ...
+    'BackgroundColor', 'w');
+
+drawnow;
+
+end
+
+%% =========================================================
+function rotaryPosition = ExtractRotaryPositionSafe(encoderData)
+
+rotaryPosition = [];
+
+if isempty(encoderData)
+    return
+end
+
+% Case 1: encoder data is a numeric array
+if isnumeric(encoderData)
+    if isvector(encoderData)
+        rotaryPosition = encoderData(:)';
+    elseif size(encoderData, 2) >= 2
+        rotaryPosition = encoderData(:, 2)';
+    else
+        rotaryPosition = encoderData(:)';
+    end
+    return
+end
+
+% Case 2: encoder data is a struct
+if isstruct(encoderData)
+
+    possibleFields = { ...
+        'Position', ...
+        'Positions', ...
+        'position', ...
+        'positions', ...
+        'EncoderPosition', ...
+        'EncoderPositions', ...
+        'Data', ...
+        'data'};
+
+    for i = 1:numel(possibleFields)
+        f = possibleFields{i};
+
+        if isfield(encoderData, f)
+            candidate = encoderData.(f);
+
+            if isnumeric(candidate) && ~isempty(candidate)
+                if isvector(candidate)
+                    rotaryPosition = candidate(:)';
+                elseif size(candidate, 2) >= 2
+                    rotaryPosition = candidate(:, 2)';
+                else
+                    rotaryPosition = candidate(:)';
+                end
+                return
+            end
+        end
+    end
+end
+
+% Case 3: encoder data is a cell array
+if iscell(encoderData)
+    try
+        candidate = cell2mat(encoderData);
+        if isnumeric(candidate) && ~isempty(candidate)
+            rotaryPosition = candidate(:)';
+        end
+    catch
+        rotaryPosition = [];
+    end
+end
+
 end
