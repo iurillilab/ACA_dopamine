@@ -91,6 +91,7 @@ for currentTrial = 1:MaxTrials
     S = BpodParameterGUI('sync', S);
     trialType = TrialTypes(currentTrial);
     trialLabel = TrialTypeToString(trialType);
+    
     fprintf('\nTrial %d/%d | Type: %s\n', currentTrial, MaxTrials, trialLabel);
     UpdateTaskVisualizationStart(TaskVis, currentTrial, MaxTrials, trialType, trialLabel);
     
@@ -193,7 +194,7 @@ for currentTrial = 1:MaxTrials
             sma = AddState(sma, 'Name', 'DeliverAirPuff', ...
                 'Timer', S.GUI.AirpuffDuration, ...
                 'StateChangeConditions', {'Tup', 'EndAirPuff'}, ...
-                'OutputActions', {'ValveModule1', 2});
+                'OutputActions', {'ValveModule1', 3});
 
             sma = AddState(sma, 'Name', 'EndAirPuff', ...
                 'Timer', 0.01, ...
