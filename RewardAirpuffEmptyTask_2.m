@@ -33,7 +33,7 @@ if isempty(fieldnames(S))
 
     % Continuous sync for photometry
     S.GUI.SyncBNC = 1;
-    S.GUI.SyncPulseWidth = 0.001;
+    S.GUI.SyncPulseWidth = 0.05;
     S.GUI.SyncFrequency = 10;
 
     S.GUIPanels.ITI = {'ITI_Mean', 'ITI_Min', 'ITI_Max'};
