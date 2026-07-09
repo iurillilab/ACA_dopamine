@@ -107,16 +107,60 @@ for i = 1:nTrials
     wheel_t = enc.Times(:);
     wheel_pos = enc.Positions(:);
 
-    % Wheel speed
-    wheel_vel = [NaN; diff(wheel_pos) ./ diff(wheel_t)];
-    wheel_absvel = abs(wheel_vel);
-    wheel_absvel_on_fp = interp1(wheel_t, wheel_absvel, fp_time_from_trial_start{i}, 'linear', NaN);
+      % Remove NaNs
+    valid_enc = ~isnan(wheel_t) & ~isnan(wheel_pos);
+    wheel_t = wheel_t(valid_enc);
+    wheel_pos = wheel_pos(valid_enc);
 
-    % Saving 
-    Wheel_TimeFromTrialStart_s{i} = fp_time_from_trial_start{i};
-    Wheel_Position{i} = interp1(wheel_t, wheel_pos, fp_time_from_trial_start{i}, 'linear', NaN);
-    Wheel_Velocity{i} = interp1(wheel_t, wheel_vel, fp_time_from_trial_start{i}, 'linear', NaN);
-    Wheel_AbsVelocity{i} = wheel_absvel_on_fp;
+    if numel(wheel_t) > 2
+
+        % Encoder time relative to beginning of this trial
+        % This is needed because enc.Times appears to be in session/stream time
+        wheel_t = wheel_t - wheel_t(1);
+
+        % Remove duplicated time points, if any
+        [wheel_t, unique_idx] = unique(wheel_t, 'stable');
+        wheel_pos = wheel_pos(unique_idx);
+
+        % Remove artificial jumps due to Bipolar wrapMode
+        wheel_pos_unwrapped = unwrap(wheel_pos * pi/180) * 180/pi;
+
+        % Velocity from unwrapped position
+        wheel_vel = [NaN; diff(wheel_pos_unwrapped) ./ diff(wheel_t)];
+        wheel_absvel = abs(wheel_vel);
+
+        % Interpolate encoder data on photometry timebase
+        Wheel_TimeFromTrialStart_s{i} = fp_time_from_trial_start{i};
+
+        Wheel_Position{i} = interp1( ...
+            wheel_t, ...
+            wheel_pos_unwrapped, ...
+            fp_time_from_trial_start{i}, ...
+            'linear', ...
+            NaN);
+
+        Wheel_Velocity{i} = interp1( ...
+            wheel_t, ...
+            wheel_vel, ...
+            fp_time_from_trial_start{i}, ...
+            'linear', ...
+            NaN);
+
+        Wheel_AbsVelocity{i} = interp1( ...
+            wheel_t, ...
+            wheel_absvel, ...
+            fp_time_from_trial_start{i}, ...
+            'linear', ...
+            NaN);
+
+    else
+
+        Wheel_TimeFromTrialStart_s{i} = fp_time_from_trial_start{i};
+        Wheel_Position{i} = NaN(size(fp_time_from_trial_start{i}));
+        Wheel_Velocity{i} = NaN(size(fp_time_from_trial_start{i}));
+        Wheel_AbsVelocity{i} = NaN(size(fp_time_from_trial_start{i}));
+
+    end
 
 end
 
@@ -161,6 +205,7 @@ TrialTable.Properties.VariableNames = { ...
     'Wheel_Position', ...
     'Wheel_Velocity', ...
     'Wheel_AbsVelocity'};
+
 
 %% Airpuff trials 
 
@@ -223,13 +268,14 @@ EmptyTrials = TrialTable(is_empty, :);
 nEmptyTrials = height(EmptyTrials);
 
 for i = 1:nEmptyTrials
+
     fp = EmptyTrials.FP_Signal{i};
     vel = EmptyTrials.Wheel_AbsVelocity{i}(:);
     time = EmptyTrials.FP_Time_s{i}(:);
 
-    valid = ~isnan(fp) & ~isnan(vel);
+    valid = ~isnan(fp) & ~isnan(vel) & ~isnan(time);
 
-    all_fp_times = [all_fp_times, time(valid)];
+    all_fp_times = [all_fp_times; time(valid)];
     all_fp = [all_fp; fp(valid)];
     all_vel = [all_vel; vel(valid)];
 end
