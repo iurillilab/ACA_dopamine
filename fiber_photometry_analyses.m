@@ -56,6 +56,8 @@ plot(fp_time_signal,digital_1_cut)
 
 trial_start = SessionData.TrialStartTimestamp(:) - bpod_sync_time(1); 
 trial_end = SessionData.TrialEndTimestamp(:)- bpod_sync_time(1); 
+trial_start = trial_start-trial_start(1);
+trial_end = trial_end-trial_start(1);
 nTrials = SessionData.nTrials;
 
 % Preallocate 
@@ -84,7 +86,7 @@ Wheel_AbsVelocity = cell(nTrials,1);
 for i = 1:nTrials
 
     % Fiber photometry
-    idx = fp_time_signal >= trial_start(i) & fp_time_signal < trial_end(i);
+    idx = fp_time_signal >= trial_start(i) & fp_time_signal <= trial_end(i);
     fp_time_from_trial_start{i} = fp_time_signal(idx) - trial_start(i);
     fp_time_trial{i} = fp_time_signal(idx);
     fp_signal_trial{i} = processed_signal_cut(idx);
@@ -107,49 +109,52 @@ for i = 1:nTrials
     wheel_t = enc.Times(:);
     wheel_pos = enc.Positions(:);
 
-      % Remove NaNs
+    % Remove NaNs
     valid_enc = ~isnan(wheel_t) & ~isnan(wheel_pos);
     wheel_t = wheel_t(valid_enc);
     wheel_pos = wheel_pos(valid_enc);
 
-    if numel(wheel_t) > 2
+     if numel(wheel_t) > 2
 
         % Encoder time relative to beginning of this trial
         % This is needed because enc.Times appears to be in session/stream time
-        wheel_t = wheel_t - wheel_t(1);
+        index = wheel_t>= SessionData.TrialStartTimestamp(i) & wheel_t<= SessionData.TrialEndTimestamp(i);
+        wheel_t = wheel_t(index);  
+        wheel_pos = wheel_pos(index);  
+        wheel_t0 = wheel_t - SessionData.TrialStartTimestamp(1);
 
         % Remove duplicated time points, if any
-        [wheel_t, unique_idx] = unique(wheel_t, 'stable');
-        wheel_pos = wheel_pos(unique_idx);
+        % [wheel_t, unique_idx] = unique(wheel_t, 'stable');
+        % wheel_pos = wheel_pos(unique_idx);
 
         % Remove artificial jumps due to Bipolar wrapMode
         wheel_pos_unwrapped = unwrap(wheel_pos * pi/180) * 180/pi;
 
         % Velocity from unwrapped position
-        wheel_vel = [NaN; diff(wheel_pos_unwrapped) ./ diff(wheel_t)];
+        wheel_vel = [NaN;diff(wheel_pos_unwrapped) ./ diff(wheel_t0)];
         wheel_absvel = abs(wheel_vel);
 
         % Interpolate encoder data on photometry timebase
-        Wheel_TimeFromTrialStart_s{i} = fp_time_from_trial_start{i};
+        Wheel_TimeFromTrialStart_s{i} = fp_time_trial{i};
 
         Wheel_Position{i} = interp1( ...
-            wheel_t, ...
+            wheel_t0, ...
             wheel_pos_unwrapped, ...
-            fp_time_from_trial_start{i}, ...
+            fp_time_trial{i}, ...
             'linear', ...
             NaN);
 
         Wheel_Velocity{i} = interp1( ...
-            wheel_t, ...
+            wheel_t0, ...
             wheel_vel, ...
-            fp_time_from_trial_start{i}, ...
+            fp_time_trial{i}, ...
             'linear', ...
             NaN);
 
         Wheel_AbsVelocity{i} = interp1( ...
-            wheel_t, ...
+            wheel_t0, ...
             wheel_absvel, ...
-            fp_time_from_trial_start{i}, ...
+            fp_time_trial{i}, ...
             'linear', ...
             NaN);
 
@@ -325,6 +330,95 @@ xlim([0 15]);
 
 title('Empty trials: photometry and rotary encoder');
 box off;
+
+%%
+%Definisci un periodo di locomotion activity mettendo una soglia di
+%velecità e di duarata.
+%Guarda l'attività della 
+
+all_fp = [];
+all_vel = [];
+all_fp_times = [];
+
+is_empty = strcmp(TrialTable.TrialLabel, 'Empty');
+EmptyTrials = TrialTable(is_empty, :);
+
+nEmptyTrials = height(EmptyTrials);
+
+for i = 1:nEmptyTrials
+
+    fp = EmptyTrials.FP_Signal{i};
+    vel = EmptyTrials.Wheel_AbsVelocity{i}(:);
+    time = EmptyTrials.FP_Time_s{i}(:);
+
+    valid = ~isnan(fp) & ~isnan(vel) & ~isnan(time);
+
+    all_fp_times = [all_fp_times; time(valid)];
+    all_fp = [all_fp; fp(valid)];
+    all_vel = [all_vel; vel(valid)];
+end
+
+f_time= uint32(1:length(all_fp));
+
+figure('Color','w');
+hold on;
+
+yyaxis left
+plot(f_time, all_fp, 'b', 'LineWidth', 1.2);
+ylabel('Fiber photometry signal');
+ylim([-5 5]); 
+
+yyaxis right
+plot(f_time, all_vel, 'Color', [0.85 0.33 0.10], 'LineWidth', 1.2);
+ylabel('Rotary encoder');
+ylim([0 200]); 
+
+xlabel('Time from event (s)');
+xlim([0 500]);
+
+title('Empty trials: photometry and rotary encoder');
+box off;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
