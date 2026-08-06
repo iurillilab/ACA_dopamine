@@ -80,6 +80,10 @@ BpodSystem.Data.TotalLicks = [];
 BpodSystem.Data.LickTimes = {};
 
 BpodSystem.Data.EncoderData = {};
+% BpodSystem.Data.EncoderFinalPosition_deg = [];
+% BpodSystem.Data.EncoderMinPosition_deg = [];
+% BpodSystem.Data.EncoderMaxPosition_deg = [];
+% BpodSystem.Data.EncoderSampleCount = [];
 BpodSystem.Data.TrialSettings = {};
 
 BpodSystem.Data.SyncPulseOn = {};
@@ -259,8 +263,20 @@ for currentTrial = 1:MaxTrials
         encoderDataThisTrial = REM.readUSBStream();
         BpodSystem.Data.EncoderData{currentTrial} = encoderDataThisTrial;
 
-        UpdateTaskVisualizationEnd(TaskVis, currentTrial);
+        %  [encoderTimes, encoderPositions, encoderFinal, encoderMin, encoderMax, encoderSamples] = ...
+        %     ExtractEncoderReadout(encoderDataThisTrial);
+        %
+        % BpodSystem.Data.EncoderFinalPosition_deg(currentTrial) = encoderFinal;
+        % BpodSystem.Data.EncoderMinPosition_deg(currentTrial) = encoderMin;
+        % BpodSystem.Data.EncoderMaxPosition_deg(currentTrial) = encoderMax;
+        % BpodSystem.Data.EncoderSampleCount(currentTrial) = encoderSamples;
+        %
+        % fprintf('Encoder | final: %.1f deg | range: %.1f to %.1f deg | samples: %d\n', ...
+        %     encoderFinal, encoderMin, encoderMax, encoderSamples);
 
+        % UpdateTaskVisualizationEnd(TaskVis, currentTrial, ...
+        %    encoderTimes, encoderPositions, encoderFinal, encoderMin, encoderMax, encoderSamples);
+        UpdateTaskVisualizationEnd(TaskVis, currentTrial);
         % Extract trial events
         trialData = BpodSystem.Data.RawEvents.Trial{currentTrial};
 
@@ -464,6 +480,51 @@ end
 
 end
 
+% %% =========================================================
+% function [times, positions, finalPosition, minPosition, maxPosition, sampleCount] = ...
+%     ExtractEncoderReadout(encoderData)
+% % Return a display-safe summary of RotaryEncoderModule USB stream data.
+% % Positions are reported by the module in degrees.
+% 
+% times = [];
+% positions = [];
+% finalPosition = NaN;
+% minPosition = NaN;
+% maxPosition = NaN;
+% sampleCount = 0;
+% 
+% if isempty(encoderData) || ~isstruct(encoderData)
+%     return
+% end
+% 
+% if ~isfield(encoderData, 'Positions') || isempty(encoderData.Positions)
+%     return
+% end
+% 
+% positions = double(encoderData.Positions(:)');
+% sampleCount = numel(positions);
+% 
+% if isfield(encoderData, 'Times') && numel(encoderData.Times) == sampleCount
+%     times = double(encoderData.Times(:)');
+% else
+%     times = 0:(sampleCount - 1);
+% end
+% 
+% valid = isfinite(times) & isfinite(positions);
+% times = times(valid);
+% positions = positions(valid);
+% sampleCount = numel(positions);
+% 
+% if sampleCount == 0
+%     return
+% end
+% 
+% finalPosition = positions(end);
+% minPosition = min(positions);
+% maxPosition = max(positions);
+% 
+% end
+
 %% =========================================================
 function TaskVis = InitTaskVisualization(MaxTrials, TrialTypes)
 
@@ -566,6 +627,30 @@ end
 set(TaskVis.StatusText, ...
     'String', sprintf('Completed trial %d', currentTrial), ...
     'BackgroundColor', 'w');
+
+% if encoderSamples > 0
+%     set(TaskVis.EncoderText, ...
+%         'String', sprintf(['Encoder: final %.1f deg   |   min %.1f deg   |   ' ...
+%         'max %.1f deg   |   samples %d'], ...
+%         encoderFinal, encoderMin, encoderMax, encoderSamples));
+% 
+%     relativeTimes = encoderTimes - encoderTimes(1);
+%     set(TaskVis.EncoderTrace, ...
+%         'XData', relativeTimes, ...
+%         'YData', encoderPositions);
+% 
+%     xlim(TaskVis.AxEncoder, [0 max(relativeTimes(end), 0.001)]);
+% 
+%     yPadding = max(5, 0.10 * max(1, encoderMax - encoderMin));
+%     ylim(TaskVis.AxEncoder, [encoderMin - yPadding, encoderMax + yPadding]);
+% else
+%     set(TaskVis.EncoderText, ...
+%         'String', 'Encoder: no position changes recorded during this trial');
+% 
+%     set(TaskVis.EncoderTrace, 'XData', NaN, 'YData', NaN);
+%     xlim(TaskVis.AxEncoder, [0 1]);
+%     ylim(TaskVis.AxEncoder, [-180 180]);
+% end
 
 drawnow;
 
