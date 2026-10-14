@@ -12,9 +12,9 @@ if isempty(fieldnames(S))
     S.GUI.MaxTrials = 300;
 
     % Timing
-    S.GUI.ITI_Mean = 18;
-    S.GUI.ITI_Min = 8;
-    S.GUI.ITI_Max = 28;
+    S.GUI.ITI_Mean = 20;
+    S.GUI.ITI_Min = 10;
+    S.GUI.ITI_Max = 30;
 
     % Reward
     S.GUI.RewardValve = 1;
@@ -29,7 +29,7 @@ if isempty(fieldnames(S))
     % Airpuff / Valve Module
     S.GUI.SafeExhaustValve = 1;  % Valve open by default
     S.GUI.AirpuffValve = 2;      % Valve open only during airpuff
-    S.GUI.AirpuffDuration = 2;
+    S.GUI.AirpuffDuration = 0.2;
 
     % Continuous sync for photometry
     S.GUI.SyncBNC = 1;
