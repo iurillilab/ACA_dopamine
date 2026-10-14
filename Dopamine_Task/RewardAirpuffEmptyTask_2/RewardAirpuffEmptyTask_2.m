@@ -1,4 +1,4 @@
-function RewardAirpuffEmptyTask
+function RewardAirpuffEmptyTask_2
 
 global BpodSystem
 
